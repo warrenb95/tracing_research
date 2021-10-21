@@ -1,4 +1,4 @@
-package subscriptions
+package main
 
 import (
 	"log"
@@ -8,16 +8,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/warrenb95/tracing_research/internal/tracer"
+	"github.com/warrenb95/tracing_research/tracer"
 )
 
-func RunServer() {
+func main() {
 	// Use default router
 	r := gin.Default()
 
 	r.GET("/", func(c *gin.Context) {
 		// Create a span for this request
-		tracer, close, err := tracer.Create("users_service")
+		tracer, close, err := tracer.Create("sub_service")
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
 			log.Fatalf("error creating tracer, %v", err)

@@ -1,4 +1,4 @@
-package users
+package main
 
 import (
 	"log"
@@ -8,10 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/warrenb95/tracing_research/internal/tracer"
+	"github.com/warrenb95/tracing_research/tracer"
 )
 
-func RunServer() {
+func main() {
 	// Use default router
 	r := gin.Default()
 
@@ -34,9 +34,6 @@ func RunServer() {
 		requestSpan := tracer.StartSpan("users_get_request", ext.RPCServerOption(wireContext))
 		defer requestSpan.Finish()
 
-		childSpan := tracer.StartSpan("server", opentracing.ChildOf(requestSpan.Context()))
-		defer childSpan.Finish()
-
 		httpClient := &http.Client{}
 		httpReq, err := http.NewRequest("GET", "http://localhost:10002/", nil)
 		if err != nil {
@@ -44,11 +41,11 @@ func RunServer() {
 			log.Fatalf("can't send post request to users api, %v", err)
 		}
 
-		ext.SpanKindRPCClient.Set(childSpan)
-		ext.HTTPUrl.Set(childSpan, "http://localhost:10002/")
-		ext.HTTPMethod.Set(childSpan, "GET")
+		ext.SpanKindRPCClient.Set(requestSpan)
+		ext.HTTPUrl.Set(requestSpan, "http://localhost:10002/")
+		ext.HTTPMethod.Set(requestSpan, "GET")
 
-		tracer.Inject(childSpan.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(httpReq.Header))
+		tracer.Inject(requestSpan.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(httpReq.Header))
 
 		time.Sleep(50 * time.Millisecond)
 

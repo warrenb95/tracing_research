@@ -9,21 +9,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 
-	"github.com/warrenb95/tracing_research/internal/subscriptions"
-	"github.com/warrenb95/tracing_research/internal/tracer"
-	"github.com/warrenb95/tracing_research/internal/users"
+	"github.com/warrenb95/tracing_research/tracer"
 )
 
 func main() {
-	go func() {
-		// run the other servers
-		users.RunServer()
-	}()
-
-	go func() {
-		subscriptions.RunServer()
-	}()
-
 	// Use default router
 	r := gin.Default()
 	r.GET("/", createUser)
@@ -32,6 +21,14 @@ func main() {
 }
 
 func createUser(c *gin.Context) {
+	// Create a span for this request
+	tracer, close, err := tracer.Create("gateway_service")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
+		log.Fatalf("error creating tracer, %v", err)
+	}
+	defer close.Close()
+
 	// send request to endpoint
 	httpClient := &http.Client{}
 	httpReq, err := http.NewRequest("GET", "http://localhost:10001/", nil)
@@ -40,15 +37,8 @@ func createUser(c *gin.Context) {
 		log.Fatalf("can't send post request to users api, %v", err)
 	}
 
-	// Create a span for this request
-	tracer, close, err := tracer.Create("api_gateway")
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
-		log.Fatalf("error creating tracer, %v", err)
-	}
 	span := tracer.StartSpan("get_user_request")
 	defer span.Finish()
-	defer close.Close()
 
 	ext.SpanKindRPCClient.Set(span)
 	ext.HTTPUrl.Set(span, "http://localhost:10001/")
