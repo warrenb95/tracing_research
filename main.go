@@ -3,51 +3,25 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/uber/jaeger-client-go"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
-	jaegerlog "github.com/uber/jaeger-client-go/log"
 
-	"github.com/uber/jaeger-lib/metrics"
+	"github.com/warrenb95/tracing_research/internal/subscriptions"
+	"github.com/warrenb95/tracing_research/internal/tracer"
 	"github.com/warrenb95/tracing_research/internal/users"
 )
 
 func main() {
-	cfg := jaegercfg.Configuration{
-		ServiceName: "your_service_name",
-		Sampler: &jaegercfg.SamplerConfig{
-			Type:  jaeger.SamplerTypeConst,
-			Param: 1,
-		},
-		Reporter: &jaegercfg.ReporterConfig{
-			LogSpans: true,
-		},
-	}
-
-	// Example logger and metrics factory. Use github.com/uber/jaeger-client-go/log
-	// and github.com/uber/jaeger-lib/metrics respectively to bind to real logging and metrics
-	// frameworks.
-	jLogger := jaegerlog.StdLogger
-	jMetricsFactory := metrics.NullFactory
-
-	// Initialize tracer with a logger and a metrics factory
-	tracer, closer, err := cfg.NewTracer(
-		jaegercfg.Logger(jLogger),
-		jaegercfg.Metrics(jMetricsFactory),
-	)
-	if err != nil {
-		log.Fatalf("can't create new tracer, %v", err)
-	}
-	// Set the singleton opentracing.Tracer with the Jaeger tracer.
-	opentracing.SetGlobalTracer(tracer)
-	defer closer.Close()
-
 	go func() {
 		// run the other servers
 		users.RunServer()
+	}()
+
+	go func() {
+		subscriptions.RunServer()
 	}()
 
 	// Use default router
@@ -67,14 +41,22 @@ func createUser(c *gin.Context) {
 	}
 
 	// Create a span for this request
-	span := opentracing.GlobalTracer().StartSpan("get_user_request")
+	tracer, close, err := tracer.Create("api_gateway")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
+		log.Fatalf("error creating tracer, %v", err)
+	}
+	span := tracer.StartSpan("get_user_request")
 	defer span.Finish()
+	defer close.Close()
 
 	ext.SpanKindRPCClient.Set(span)
 	ext.HTTPUrl.Set(span, "http://localhost:10001/")
 	ext.HTTPMethod.Set(span, "GET")
 
-	opentracing.GlobalTracer().Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(httpReq.Header))
+	tracer.Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(httpReq.Header))
+
+	time.Sleep(25 * time.Millisecond)
 
 	_, err = httpClient.Do(httpReq)
 	if err != nil {
